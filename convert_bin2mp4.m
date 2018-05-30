@@ -21,7 +21,7 @@ N = 10;
 
 T_all = [];
 last_time = get_time(files(3).name);
-last_view = get_view(files(3).name);
+last_view = get_view(files(3).name,1);
 timestamp = files(3).name(1:12);
 
 m = regexp(files(3).name,'(\d+)x(\d+)','tokens');
@@ -34,7 +34,7 @@ end
 
 for i = 3:length(files)
     filename = files(i).name;
-    filepath = [inputFolder '\' filename];
+    filepath = [inputFolder '/' filename];
     [~,~,ext] = fileparts(filepath);
     if (~strcmp(ext,'.bin'))
         error('Non .bin file detected in input folder, exiting')
@@ -44,12 +44,12 @@ for i = 3:length(files)
     T = fread(fid,W*H*N,'uint8');
     fclose(fid);
     
-    if(get_time(filename) - last_time < 1.5 && strcmp(get_view(filename),last_view))
+    if(get_time(filename) - last_time < 1.5 && strcmp(get_view(filename,1),last_view))
         % same cine: add to T_all and continue
         %disp(['        Reading from: ' filename ' --- Same cine...']); 
         T_all = cat(3,T_all,permute(reshape(T,[W H N]),[2 1 3]));
         last_time = get_time(filename);
-        last_view = get_view(filename);
+        last_view = get_view(filename,1);
         continue;
     else        
         T_all = T_all();
@@ -78,7 +78,7 @@ for i = 3:length(files)
         timestamp = filename(1:12);
         T_all = permute(reshape(T,[W H N]),[2 1 3]);
         last_time = get_time(filename);
-        last_view = get_view(filename);
+        last_view = get_view(filename,1);
     end
 end
 
