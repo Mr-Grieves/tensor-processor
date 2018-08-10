@@ -17,15 +17,28 @@
 %                                  This scipt will append to it, populating
 %                                  every column except for the GoldStandard
 
-% Main TODOs:
-% - test on sparse data
-% - write demographic sheet
-%
+% Trial #1 Notes:
+% - trials 04 and 06 started with trying PLAX instead of AP4
+% - the "scroll down for more options" should be a button that scrolls down for you
+% - trial_11 and trial_12 are both from sean so need to amalgomate
+% - timer appear after 1 min?
+% - subc5's are classified as c4
+
+% Trial #2 Notes:
+% - Started with ID=12 -> trial_11 (+9)
+% - Ended with   ID=22 -> trial_21 (+9)
+% - NASA Slider!
+% - Look at the effect of 1st vs. 2nd attempt at a view
+% - Something funky happened with trial 14's PLAX_OFF/PSAX_OFF
+% - And again on Trial 20 :( no bo AP4 or PSAXPM?
+%     - lost subc4
+%     - Assert failed becuase the bestOf PLAX_OFF == lastN PLAX_OFF
+% - Dont proceed until youve recorded 100 Frames!
 
 %% Here we go
 clc;
 clear all;
-datestamp = '25-05-2018';
+datestamp = '21-06-2018';
 append = 0;
 enhance = 1;
 
@@ -38,6 +51,10 @@ output_folder = ['for_scoring/' datestamp];
 if (exist([output_folder '/'], 'dir') == 0)
     mkdir([output_folder '/']);
 end
+random_folder = ['for_scoring/' datestamp '/randomized_mats'];
+if (exist([random_folder '/'], 'dir') == 0)
+    mkdir([random_folder '/']);
+end
 trial_nums = dir(input_folder);
 
 demo_lines = { 'Date' 'Trial #' 'Participant ID' 'Position-Year' ...
@@ -46,6 +63,9 @@ demo_lines = { 'Date' 'Trial #' 'Participant ID' 'Position-Year' ...
            
 all_cells = {'Date' 'Trial #' 'Participant ID' 'Timestamp' 'Requested View' 'Expert Score' ...
              'AI Score' 'Time Taken' 'Feedback' 'BestOf' 'Position Error' 'Orientation Error'};
+
+evai_input_cells = {};%'file_address','correct_indx'};
+
 
 for t = 0:length(trial_nums)-3
     % Loop through all trial folders saved here
@@ -116,7 +136,19 @@ for t = 0:length(trial_nums)-3
     %% Write the .mp4's 
     timestamps_last = convert_bin2mp4([trial_folder '/recorded_tensors/raw_pixels'],[output_folder '/' trial_num],enhance);
     timestamps_best = convert_bin2mp4([trial_folder '/recorded_tensors/raw_pixels_bo'],[output_folder '/' trial_num],enhance);
-
+    cells_last = convert_bin2dicom([trial_folder '/recorded_tensors/raw_pixels'],random_folder,enhance);
+    cells_best = convert_bin2dicom([trial_folder '/recorded_tensors/raw_pixels_bo'],random_folder,enhance);
+    
+    %% Add cells to evai csv
+    for j = 1:length(cells_last)
+       evai_input_cells{end+1,1} = cells_last{j,1};
+       evai_input_cells{end,2}   = cells_last{j,2};
+    end
+    for j = 1:length(cells_best)
+       evai_input_cells{end+1,1} = cells_best{j,1};
+       evai_input_cells{end,2}   = cells_best{j,2};
+    end
+    
     %% Add this trial to the datasheet's cells
     % First read and store all relevant data from results.txt
     results = []; % the goal is to build this array such that each line 
@@ -138,7 +170,7 @@ for t = 0:length(trial_nums)-3
             if strfind(nextLine,'PositionError'), pos_err = 'PositionError'; else pos_err = ''; end
             if strfind(nextLine,'OrientationError'), ori_err = 'OrientationError'; else ori_err = ''; end
 
-            %TODO: fix this!!!
+            % This should only be true if the lastN scores had 10 tensors!
             %assert(score_best >= score_last); % if this fails, something is wrong in the java code
 
             % Add bestof score 
@@ -147,7 +179,7 @@ for t = 0:length(trial_nums)-3
                 results{end,2} = score_best;
                 results{end,3} = time_best;
                 results{end,4} = feedback;
-                if score_last == score_best
+                if time_last == time_best
                     results{end,5} = 'BOTH';
                     nextLine = fgetl(fid);
                     continue; % Use this line as both lastN and bestOf
@@ -287,5 +319,19 @@ else
     NewWorkbook.Close
 end
 ExcelApp.Quit
+
+%% Create the evai csv
+evai_input_cells = sortrows(evai_input_cells,1);
+evai_input_cells = [ {'file_address' 'correct_indx'}; evai_input_cells];
+datasheet_filename = [output_folder '/evai_input.csv'];
+disp(['Writing EVAI csv to: ' datasheet_filename]);
+fid = fopen(datasheet_filename, 'w');
+fprintf(fid, '%s,', evai_input_cells{1,1:end-1}) ;
+fprintf(fid, '%s\n', evai_input_cells{1,end}) ;
+for i = 2:length(evai_input_cells)
+    fprintf(fid, '%s,', evai_input_cells{i,1}) ;
+    fprintf(fid, '%d\n', evai_input_cells{i,2}) ;
+end
+fclose(fid);
 
 disp(['Success! Finished processing data from: ' input_folder]);
