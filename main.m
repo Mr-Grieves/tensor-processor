@@ -35,10 +35,12 @@
 %     - Assert failed becuase the bestOf PLAX_OFF == lastN PLAX_OFF
 % - Dont proceed until youve recorded 100 Frames!
 
+% SUBC4 often misclassified as IVC (doesnt even look anything like IVC!!!) 
+
 %% Here we go
 clc;
 clear all;
-datestamp = '21-06-2018';
+datestamp = '26-09-2019';
 append = 0;
 enhance = 1;
 
@@ -61,8 +63,9 @@ demo_lines = { 'Date' 'Trial #' 'Participant ID' 'Position-Year' ...
                'Regular Practice' 'Experience' 'Confidence' 'MD' 'PD' ...
                'TP' 'P' 'E' 'F' 'MT' 'PD' 'TD' 'P' 'E' 'F' };
            
-all_cells = {'Date' 'Trial #' 'Participant ID' 'Timestamp' 'Requested View' 'Expert Score' ...
-             'AI Score' 'Time Taken' 'Feedback' 'BestOf' 'Position Error' 'Orientation Error'};
+all_cells = {'Date' 'Trial #' 'Participant ID' 'Timestamp' 'Requested View'...
+             'Incorrect View' 'Subjective Score' 'Gaudet Score' 'AI Score' ...
+             'Time Taken' 'Feedback' 'BestOf' 'Position Error' 'Orientation Error'};
 
 evai_input_cells = {};%'file_address','correct_indx'};
 
@@ -152,12 +155,14 @@ for t = 0:length(trial_nums)-3
     %% Add this trial to the datasheet's cells
     % First read and store all relevant data from results.txt
     results = []; % the goal is to build this array such that each line 
-                  % will match the .avi's created by convert_bin2mp4
+                  % will match the .avi's created by convert_bin2mp4       
+    num_skipped = 0; % number of skipped views (using the next/prev buttons)
     if (exist([trial_folder '/results.txt'], 'file') == 0)
         warning(['results.txt does not exist: ' trial_folder '/results.txt']);
     else
         fid = fopen([trial_folder '/results.txt']);
         nextLine = fgetl(fid); % get first line
+
         while 1
             if ~ischar(nextLine), break, end  
             m = regexp(nextLine,'Quality: (\d+.\d+)%\s+Time: (\d+)ms\s+BestOf: (\d+.\d+)%\s+Time-BO: (\d+)ms','tokens');
@@ -169,7 +174,11 @@ for t = 0:length(trial_nums)-3
             time_best = str2num(m{1}{4});
             if strfind(nextLine,'PositionError'), pos_err = 'PositionError'; else pos_err = ''; end
             if strfind(nextLine,'OrientationError'), ori_err = 'OrientationError'; else ori_err = ''; end
-
+            if time_last == 0
+                disp(['Detected skipped view: ' view ' Feedback: ' num2str(feedback)]);
+                num_skipped = num_skipped+1;
+            end
+            
             % This should only be true if the lastN scores had 10 tensors!
             %assert(score_best >= score_last); % if this fails, something is wrong in the java code
 
@@ -205,20 +214,26 @@ for t = 0:length(trial_nums)-3
     
         % Second populate and add a new row for each .avi
         files = dir([output_folder '/' trial_num]);
-        assert(length(files)-2 == size(results,1));
+        assert(length(files)-2 == size(results,1)-num_skipped);
+        curr_skip = 0;
         for i = 3:length(files)
             filename = files(i).name;
             [~,~,ext] = fileparts(filename);
+            
+            % Skip this row in results
+            if results{i-2+curr_skip,3} == 0
+                curr_skip = curr_skip+1;
+            end
 
             % sanity checks        
             if (~strcmp(ext,'.avi'))
                 warning(['Non .avi file detected in trial folder: ' filename])
             end
-            assert(strcmp(get_view(filename,0),results{i-2,1})); 
-            if strcmp(results{i-2,5},'TRUE') || strcmp(results{i-2,5},'BOTH')
+            assert(strcmp(get_view(filename,0),results{i-2+curr_skip,1})); 
+            if strcmp(results{i-2+curr_skip,5},'TRUE') || strcmp(results{i-2+curr_skip,5},'BOTH')
                 assert(is_member_of(filename(1:12),timestamps_best) == 1);
             end
-            if strcmp(results{i-2,5},'FALSE') || strcmp(results{i-2,5},'BOTH')
+            if strcmp(results{i-2+curr_skip,5},'FALSE') || strcmp(results{i-2+curr_skip,5},'BOTH')
                 assert(is_member_of(filename(1:12),timestamps_last) == 1);
             end
 
@@ -227,37 +242,22 @@ for t = 0:length(trial_nums)-3
             all_cells{end,3} = id;
             all_cells{end,4} = filename(1:12);
             all_cells{end,5} = get_view(filename,0);
-            all_cells{end,7} = results{i-2,2};
-            all_cells{end,8} = results{i-2,3};
-            all_cells{end,9} = results{i-2,4};
-            all_cells{end,10} = results{i-2,5};
-            all_cells{end,11} = results{i-2,6};
-            all_cells{end,12} = results{i-2,7};
+            %all_cells{end,6} = incorrect view
+            %all_cells{end,7} = subjectives
+            %all_cells{end,8} = gaudets
+            all_cells{end,9} = results{i-2+curr_skip,2};
+            all_cells{end,10} = results{i-2+curr_skip,3};
+            all_cells{end,11} = results{i-2+curr_skip,4};
+            all_cells{end,12} = results{i-2+curr_skip,5};
+            all_cells{end,13} = results{i-2+curr_skip,6};
+            all_cells{end,14} = results{i-2+curr_skip,7};
         end
     end
 end
 
-%% Create trial_data_sheet.xls and write cells to it
-datasheet_filename = [output_folder '/data_sheet.xls'];
-disp(' ');disp(['Writing template xls to: ' datasheet_filename]);
-xlswrite(datasheet_filename, all_cells(:,2:6)); % only copy 5 columns
-
-% format the columns all nice
+%% Append to master_data_sheet.xls
 ExcelApp=actxserver('excel.application');
 ExcelApp.Visible=0;
-NewWorkbook=ExcelApp.Workbooks.Open([pwd '\' datasheet_filename]);   
-NewSheet=NewWorkbook.Sheets.Item(1);
-NewRange=NewSheet.Range('A1'); NewRange.ColumnWidth=10;
-NewRange=NewSheet.Range('B1'); NewRange.ColumnWidth=15;
-NewRange=NewSheet.Range('C1'); NewRange.ColumnWidth=15;
-NewRange=NewSheet.Range('D1'); NewRange.ColumnWidth=15;
-NewRange=NewSheet.Range('E1'); NewRange.ColumnWidth=12;
-%ExcelApp.Cells.Select;
-%ExcelApp.Cells.EntireColumn.AutoFit;
-NewWorkbook.Save
-NewWorkbook.Close
-
-%% Append to master_data_sheet.xls
 if append
     % Append results
     mastersheet_filename = ['master_sheetALL.xls'];
